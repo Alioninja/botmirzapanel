@@ -57,7 +57,25 @@ if (intval($from_id) != 0) {
     } else {
         $verify = 1;
     }
-    $stmt = $pdo->prepare("INSERT IGNORE INTO user (id, step, limit_usertest, User_Status, number, Balance, pagenumber, username, message_count, last_message_time, affiliatescount, affiliates,verify) VALUES (:from_id, 'none', :limit_usertest_all, 'Active', 'none', '0', '1', :username, '0', '0', '0', '0',:verify)");
+
+    do {
+        $ref_code = bin2hex(random_bytes(16));
+        $stmt_check = $pdo->prepare("SELECT 1 FROM user WHERE ref_code = :ref_code");
+        $stmt_check->bindParam(':ref_code', $ref_code);
+        $stmt_check->execute();
+
+    } while ($stmt_check->fetchColumn());
+
+    $stmt = $pdo->prepare(
+        "INSERT IGNORE INTO user
+            (id, ref_code, step, limit_usertest, User_Status, number, Balance,
+            pagenumber, username, message_count, last_message_time,
+            affiliatescount, affiliates, verify)
+        VALUES
+            (:from_id, :ref_code, 'none', :limit_usertest_all, 'Active', 'none', '0',
+            '1', :username, '0', '0', '0', '0', :verify)"
+    );
+    $stmt->bindParam(':ref_code', $ref_code);
     $stmt->bindParam(':verify', $verify);
     $stmt->bindParam(':from_id', $from_id);
     $stmt->bindParam(':limit_usertest_all', $setting['limit_usertest_all']);
@@ -153,7 +171,19 @@ if (strpos($text, "/start ") !== false) {
         sendmessage($from_id, $textbotlang['users']['affiliates']['offaffiliates'], $keyboard, 'HTML');
         return;
     }
-    $affiliatesid = str_replace("/start ", "", $text);
+    $token = str_replace("/start ", "", $text);
+    $refRow = select("user", "id", "ref_code", $token, "select");
+    if ($refRow !== false) {
+        $affiliatesid = $refRow['id'];                 // modern link found
+    }
+    /*  2️⃣  fall back to legacy numeric ID  */
+    elseif (ctype_digit($token)) {
+        $affiliatesid = (int)$token;                   // old link
+    }
+    /*  3️⃣  invalid token → pretend there is no referrer       */
+    else {
+        $affiliatesid = 0;                             // will fail the in_array() test below
+    }
     if (ctype_digit($affiliatesid)) {
         if (!in_array($affiliatesid, $users_ids)) {
             sendmessage($from_id, $textbotlang['users']['affiliates']['affiliatesyou'], null, 'html');
@@ -2185,7 +2215,8 @@ if ($text == $textbotlang['users']['affiliates']['btn']) {
         return;
     }
     $affiliates = select("affiliates", "*", null, null, "select");
-    $textaffiliates = "{$affiliates['description']}\n\n🔗 https://t.me/$usernamebot?start=$from_id";
+    $my_code = $user['ref_code'];                        // <- brand-new field
+    $textaffiliates = "{$affiliates['description']}\n\n🔗 https://t.me/$usernamebot?start=$my_code";
     telegram('sendphoto', [
         'chat_id' => $from_id,
         'photo' => $affiliates['id_media'],
