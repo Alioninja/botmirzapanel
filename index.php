@@ -318,6 +318,129 @@ if ($text == "/start") {
     step('home', $from_id);
     return;
 }
+#-----------/new (buy service)------------#
+if ($text == "/new") {
+    $locationproduct = select("marzban_panel", "*", "status", "activepanel", "count");
+    if ($locationproduct == 0) {
+        sendmessage($from_id, $textbotlang['Admin']['managepanel']['nullpanel'], null, 'HTML');
+        return;
+    }
+    if ($setting['get_number'] == "1" && $user['step'] != "get_number" && $user['number'] == "none") {
+        sendmessage($from_id, $textbotlang['users']['number']['Confirming'], $request_contact, 'HTML');
+        step('get_number', $from_id);
+        return;
+    }
+    if ($user['number'] == "none" && $setting['get_number'] == "1")
+        return;
+    #-----------------------#
+    if ($locationproduct == 1) {
+        $panel = select("marzban_panel", "*", "status", "activepanel", "select");
+        update("user", "Processing_value", $panel['name_panel'], "id", $from_id, "select");
+        if ($setting['statuscategory'] == "0") {
+            $nullproduct = select("product", "*", null, null, "count");
+            if ($nullproduct == 0) {
+                sendmessage($from_id, $textbotlang['Admin']['Product']['nullpProduct'], null, 'HTML');
+                return;
+            }
+            $textproduct = sprintf($textbotlang['users']['buy']['selectService'], $panel['name_panel']);
+            sendmessage($from_id, $textproduct, KeyboardProduct($panel['name_panel'], "backuser", $panel['MethodUsername']), 'HTML');
+        } else {
+            $emptycategory = select("category", "*", null, null, "count");
+            if ($emptycategory == 0) {
+                sendmessage($from_id, $textbotlang['users']['category']['NotFound'], null, 'HTML');
+                return;
+            }
+            sendmessage($from_id, $textbotlang['users']['category']['selectCategory'], KeyboardCategorybuy("backuser", $panel['name_panel']), 'HTML');
+        }
+    } else {
+        sendmessage($from_id, $textbotlang['users']['Service']['Location'], $list_marzban_panel_user, 'HTML');
+    }
+    return;
+}
+#-----------/status (my packages)------------#
+if ($text == "/status") {
+    $stmt = $pdo->prepare("SELECT * FROM invoice WHERE id_user = :id_user AND (status = 'active' OR status = 'end_of_time'  OR status = 'end_of_volume' OR status = 'sendedwarn')");
+    $stmt->bindParam(':id_user', $from_id);
+    $stmt->execute();
+    $invoices = $stmt->rowCount();
+    if ($invoices == 0 && $setting['NotUser'] == "offnotuser") {
+        sendmessage($from_id, $textbotlang['users']['sell']['service_not_available'], null, 'html');
+        return;
+    }
+    update("user", "pagenumber", "1", "id", $from_id);
+    $page = 1;
+    $items_per_page = 10;
+    $start_index = ($page - 1) * $items_per_page;
+    $stmt = $pdo->prepare("SELECT * FROM invoice WHERE id_user = :id_user AND (status = 'active' OR status = 'end_of_time'  OR status = 'end_of_volume' OR status = 'sendedwarn') ORDER BY time_sell DESC LIMIT $start_index, $items_per_page");
+    $stmt->bindParam(':id_user', $from_id);
+    $stmt->execute();
+    $keyboardlists = [
+        'inline_keyboard' => [],
+    ];
+    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+        $keyboardlists['inline_keyboard'][] = [
+            [
+                'text' => "🌟" . $row['username'] . "🌟",
+                'callback_data' => "product_" . $row['username']
+            ],
+        ];
+    }
+    if ($setting['NotUser'] == "onnotuser") {
+        $keyboardlists['inline_keyboard'][] = [
+            [
+                'text' => $textbotlang['Admin']['Status']['notusenameinbot'],
+                'callback_data' => "notusernameget"
+            ],
+        ];
+    }
+    $total_items = select("invoice", "*", "id_user", $from_id, "count");
+    $total_pages = ceil($total_items / $items_per_page);
+    if ($page > 1) {
+        $keyboardlists['inline_keyboard'][] = [
+            ['text' => $textbotlang['users']['page']['previous'], 'callback_data' => 'prevpage_' . ($page - 1)]
+        ];
+    }
+    if ($page < $total_pages) {
+        $keyboardlists['inline_keyboard'][] = [
+            ['text' => $textbotlang['users']['page']['next'], 'callback_data' => 'nextpage_' . ($page + 1)]
+        ];
+    }
+    $keyboardlists['inline_keyboard'][] = [
+        ['text' => $textbotlang['users']['backhome'], 'callback_data' => "backuser"],
+    ];
+    $keyboardlistss = json_encode($keyboardlists);
+    sendmessage($from_id, $textbotlang['users']['sell']['service_sell'], $keyboardlistss, 'HTML');
+    step('userservices', $from_id);
+    return;
+}
+#-----------/renew (renew service)------------#
+if ($text == "/renew") {
+    $stmt = $pdo->prepare("SELECT * FROM invoice WHERE id_user = :id_user AND (status = 'active' OR status = 'end_of_time'  OR status = 'end_of_volume' OR status = 'sendedwarn')");
+    $stmt->bindParam(':id_user', $from_id);
+    $stmt->execute();
+    $invoices = $stmt->rowCount();
+    if ($invoices == 0) {
+        sendmessage($from_id, $textbotlang['users']['sell']['service_not_available'], null, 'html');
+        return;
+    }
+    $keyboardlists = [
+        'inline_keyboard' => [],
+    ];
+    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+        $keyboardlists['inline_keyboard'][] = [
+            [
+                'text' => "💊 " . $row['username'],
+                'callback_data' => "extend_" . $row['username']
+            ],
+        ];
+    }
+    $keyboardlists['inline_keyboard'][] = [
+        ['text' => $textbotlang['users']['backhome'], 'callback_data' => "backuser"],
+    ];
+    $keyboardlistss = json_encode($keyboardlists);
+    sendmessage($from_id, $textbotlang['users']['extend']['selectservice'], $keyboardlistss, 'HTML');
+    return;
+}
 #-----------back------------#
 if ($text == $textbotlang['users']['backhome'] || $datain == "backuser") {
     update("user", "Processing_value", "0", "id", $from_id);
