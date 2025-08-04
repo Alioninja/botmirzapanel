@@ -332,17 +332,28 @@ if ($text == "/new") {
     }
     if ($user['number'] == "none" && $setting['get_number'] == "1")
         return;
-    
-    // Redirect to buy service functionality
+    #-----------------------#
     if ($locationproduct == 1) {
         $panel = select("marzban_panel", "*", "status", "activepanel", "select");
-        $categorylist = KeyboardCategorybuy("backuser", $panel['id']);
-        sendmessage($from_id, $textbotlang['users']['category']['selectCategory'], $categorylist, 'HTML');
-        step('getcategoryproduct', $from_id);
-        update("user", "Processing_value", $panel['id'], "id", $from_id);
+        update("user", "Processing_value", $panel['name_panel'], "id", $from_id, "select");
+        if ($setting['statuscategory'] == "0") {
+            $nullproduct = select("product", "*", null, null, "count");
+            if ($nullproduct == 0) {
+                sendmessage($from_id, $textbotlang['Admin']['Product']['nullpProduct'], null, 'HTML');
+                return;
+            }
+            $textproduct = sprintf($textbotlang['users']['buy']['selectService'], $panel['name_panel']);
+            sendmessage($from_id, $textproduct, KeyboardProduct($panel['name_panel'], "backuser", $panel['MethodUsername']), 'HTML');
+        } else {
+            $emptycategory = select("category", "*", null, null, "count");
+            if ($emptycategory == 0) {
+                sendmessage($from_id, $textbotlang['users']['category']['NotFound'], null, 'HTML');
+                return;
+            }
+            sendmessage($from_id, $textbotlang['users']['category']['selectCategory'], KeyboardCategorybuy("backuser", $panel['name_panel']), 'HTML');
+        }
     } else {
         sendmessage($from_id, $textbotlang['users']['Service']['Location'], $list_marzban_panel_user, 'HTML');
-        step('getlocation', $from_id);
     }
     return;
 }
