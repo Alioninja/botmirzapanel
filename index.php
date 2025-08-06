@@ -367,6 +367,156 @@ if ($text == "/status") {
         sendmessage($from_id, $textbotlang['users']['sell']['service_not_available'], null, 'html');
         return;
     }
+    
+    // If user has exactly one service, show detailed account information
+    if ($invoices == 1) {
+        $stmt->execute(); // Re-execute to get the single row
+        $nameloc = $stmt->fetch(PDO::FETCH_ASSOC);
+        $username = $nameloc['username'];
+        
+        $marzban_list_get = select("marzban_panel", "*", "name_panel", $nameloc['Service_location'], "select");
+        $DataUserOut = $ManagePanel->DataUser($nameloc['Service_location'], $username);
+        
+        if (isset($DataUserOut['msg']) && $DataUserOut['msg'] == "User not found") {
+            sendmessage($from_id, $textbotlang['users']['stateus']['usernotfound'], $keyboard, 'html');
+            update("invoice", "Status", "disabledn", "id_invoice", $nameloc['id_invoice']);
+            return;
+        }
+        if ($DataUserOut['status'] == "Unsuccessful") {
+            sendmessage($from_id, $textbotlang['users']['stateus']['error'], $keyboard, 'html');
+            return;
+        }
+        
+        // Format last online status
+        if ($DataUserOut['online_at'] == "online") {
+            $lastonline = $textbotlang['users']['online'];
+        } elseif ($DataUserOut['online_at'] == "offline") {
+            $lastonline = $textbotlang['users']['offline'];
+        } else {
+            if (isset($DataUserOut['online_at']) && $DataUserOut['online_at'] !== null) {
+                $dateString = $DataUserOut['online_at'];
+                $lastonline = jdate('Y/m/d h:i:s', strtotime($dateString));
+            } else {
+                $lastonline = $textbotlang['users']['stateus']['notconnected'];
+            }
+        }
+        
+        // Format status
+        $status = $DataUserOut['status'];
+        $status_var = [
+            'active' => $textbotlang['users']['stateus']['active'],
+            'limited' => $textbotlang['users']['stateus']['limited'],
+            'disabled' => $textbotlang['users']['stateus']['disabled'],
+            'expired' => $textbotlang['users']['stateus']['expired'],
+            'on_hold' => $textbotlang['users']['stateus']['onhold']
+        ][$status] ?? $status;
+        
+        // Format expiration date
+        $expirationDate = $DataUserOut['expire'] ? jdate('Y/m/d', $DataUserOut['expire']) : $textbotlang['users']['stateus']['Unlimited'];
+        
+        // Format data limit
+        $LastTraffic = $DataUserOut['data_limit'] ? formatBytes($DataUserOut['data_limit']) : $textbotlang['users']['stateus']['Unlimited'];
+        
+        // Format remaining volume
+        $output = $DataUserOut['data_limit'] - $DataUserOut['used_traffic'];
+        $RemainingVolume = $DataUserOut['data_limit'] ? formatBytes($output) : $textbotlang['users']['unlimited'];
+        
+        // Format used traffic
+        $usedTrafficGb = $DataUserOut['used_traffic'] ? formatBytes($DataUserOut['used_traffic']) : $textbotlang['users']['stateus']['Notconsumed'];
+        
+        // Format remaining days
+        $timeDiff = $DataUserOut['expire'] - time();
+        $day = $DataUserOut['expire'] ? floor($timeDiff / 86400) + 1 . $textbotlang['users']['stateus']['day'] : $textbotlang['users']['stateus']['Unlimited'];
+        
+        // Create appropriate keyboard and text based on status
+        if (!in_array($status, ['active', "on_hold"])) {
+            $keyboardsetting = json_encode([
+                'inline_keyboard' => [
+                    [
+                        ['text' => $textbotlang['users']['extend']['title'], 'callback_data' => 'extend_' . $username],
+                    ],
+                    [
+                        ['text' => $textbotlang['users']['stateus']['RemoveSerivecbtn'], 'callback_data' => 'removebyuser-' . $username],
+                        ['text' => $textbotlang['users']['Extra_volume']['sellextra'], 'callback_data' => 'Extra_volume_' . $username],
+                    ],
+                    [
+                        ['text' => $textbotlang['users']['stateus']['backlist'], 'callback_data' => 'backorder'],
+                    ]
+                ]
+            ]);
+            $textinfo = sprintf($textbotlang['users']['stateus']['InfoSerivceDisable'], $status_var, $DataUserOut['username'], $nameloc['Service_location'], $nameloc['id_invoice'], $LastTraffic, $usedTrafficGb, $expirationDate, $day);
+        } else {
+            // Create keyboard for active service
+            $keyboarddate = array(
+                'linksub'=>array(
+                    'text' => $textbotlang['users']['stateus']['linksub'],
+                    'callback_data' => "subscriptionurl_"
+                ),
+                'config'=>array(
+                    'text' => $textbotlang['users']['stateus']['config'],
+                    'callback_data' => "config_"
+                ),
+                'extend'=>array(
+                    'text' => $textbotlang['users']['extend']['title'],
+                    'callback_data' => "extend_"
+                ),
+                'changelink'=>array(
+                    'text' => $textbotlang['users']['changelink']['btntitle'],
+                    'callback_data' => "changelink_"
+                ),
+                'removeservice'=>array(
+                    'text' => $textbotlang['users']['removeconfig']['btnremoveuser'],
+                    'callback_data' => "removeserviceuserco-"
+                ),
+                'Extra_volume'=>array(
+                    'text' => $textbotlang['users']['Extra_volume']['sellextra'],
+                    'callback_data' => "Extra_volume_"
+                ),
+            );
+            
+            if ($marzban_list_get['type'] == "wgdashboard"){
+                unset($keyboarddate['config']);
+                unset($keyboarddate['changelink']);
+            }
+            if($marzban_list_get['type'] == "mikrotik"){
+                unset($keyboarddate['Extra_volume']);
+                unset($keyboarddate['linksub']);
+                unset($keyboarddate['config']);
+                unset($keyboarddate['extend']);
+                unset($keyboarddate['changelink']);
+            }
+            if($nameloc['name_product'] == "usertest"){
+                unset($keyboarddate['removeservice']);
+            }
+            
+            $tempArray = [];
+            $keyboardsetting = ['inline_keyboard' => []];
+            foreach ($keyboarddate as $keyboardtext){
+                $tempArray[] = ['text' => $keyboardtext['text'] ,'callback_data' => $keyboardtext['callback_data'].$username];
+                if (count($tempArray) == 2) {
+                    $keyboardsetting['inline_keyboard'][] = $tempArray;
+                    $tempArray = [];
+                }
+            }
+            if (count($tempArray) > 0) {
+                $keyboardsetting['inline_keyboard'][] = $tempArray;
+            }
+            $keyboardsetting['inline_keyboard'][] = [['text' => $textbotlang['users']['stateus']['backlist'], 'callback_data' => 'backorder']];
+            $keyboardsetting = json_encode($keyboardsetting);
+            
+            if($marzban_list_get['type'] == "mikrotik"){
+                $textinfo = sprintf($textbotlang['users']['stateus']['InfoSerivceActive_mikrotik'], $status_var, $DataUserOut['username'], $DataUserOut['subscription_url'],$nameloc['Service_location'], $nameloc['id_invoice'], $LastTraffic, $usedTrafficGb, $expirationDate, $day);  
+            }else{
+                $textinfo = sprintf($textbotlang['users']['stateus']['InfoSerivceActive'], $status_var, $DataUserOut['username'], $nameloc['Service_location'], $nameloc['id_invoice'], $lastonline, $LastTraffic, $usedTrafficGb, $expirationDate, $day);
+            }
+        }
+        
+        sendmessage($from_id, $textinfo, $keyboardsetting, 'HTML');
+        step('userservices', $from_id);
+        return;
+    }
+    
+    // For multiple services, keep the original list interface
     update("user", "pagenumber", "1", "id", $from_id);
     $page = 1;
     $items_per_page = 10;
